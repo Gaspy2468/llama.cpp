@@ -1,0 +1,56 @@
+name: Build LFM Pocket iOS (unsigned)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  iphone:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build llama XCFramework
+        run: |
+          chmod +x ./build-xcframework.sh
+          ./build-xcframework.sh
+
+      - name: Build SwiftUI app without signing
+        run: |
+          xcodebuild -downloadPlatform iOS
+          xcodebuild \
+            -project examples/llama.swiftui/llama.swiftui.xcodeproj \
+            -scheme llama.swiftui \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_DIR=$(find "$RUNNER_TEMP/derived/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)
+          if [ -z "$APP_DIR" ]; then echo 'No .app generated'; exit 1; fi
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP_DIR" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry "$GITHUB_WORKSPACE/LFM-Pocket-unsigned.ipa" Payload
+
+      - name: Downloadable app
+        uses: actions/upload-artifact@v4
+        with:
+          name: LFM-Pocket-unsigned-IPA
+          path: LFM-Pocket-unsigned.ipa
+          retention-days: 7
